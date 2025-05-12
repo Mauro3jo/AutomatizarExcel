@@ -1,0 +1,15 @@
+# Carpeta de configuración de Visual Studio
+.vs/
+
+# Carpetas de compilación (por si usás .NET o similares)
+bin/
+obj/
+
+# Archivos temporales de Excel
+~$*.xls*
+*.tmp
+
+# Archivos de usuario y configuración local
+*.user
+*.suo
+*.log
