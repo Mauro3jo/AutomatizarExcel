@@ -1,15 +1,59 @@
-# Carpeta de configuración de Visual Studio
+# Visual Studio
 .vs/
-
-# Carpetas de compilación (por si usás .NET o similares)
-bin/
-obj/
-
-# Archivos temporales de Excel
-~$*.xls*
-*.tmp
-
-# Archivos de usuario y configuración local
 *.user
 *.suo
+*.userosscache
+*.sln.docstates
+
+# Build results
+bin/
+obj/
+[Ll]og/
 *.log
+
+# User-specific files
+*.rsuser
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# MSTest test Results
+[Tt]est[Rr]esult*/
+[Bb]uild[Ll]og.*
+
+# Nunit
+*.VisualState.xml
+TestResult.xml
+nunit-*.xml
+
+# Rider
+.idea/
+
+# DotCover
+*.dotCover
+
+# Backup & temp files
+*~ 
+*.tmp 
+*.bak 
+*.swp
+
+# VS Code
+.vscode/
+.history/
+
+# appsettings (ignorar configuraciones sensibles)
+appsettings.json
+appsettings.Development.json
+appsettings.Production.json
+appsettings.Staging.json
+
+# Otros secretos comunes
+secrets.json
+
+# Archivos de configuración de usuario
+*.env
+
+# Paquetes NuGet
+*.nupkg
