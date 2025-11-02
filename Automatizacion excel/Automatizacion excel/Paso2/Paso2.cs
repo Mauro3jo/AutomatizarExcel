@@ -17,12 +17,9 @@ namespace Automatizacion_excel.Paso2
         private string rutaExcelPaso1;
         private string rutaExcelPaso2;
 
-        private DateTimePicker pickerFechaSeleccionada;
-        private Button btnProcesarDesdeExcepcion;
+        private Button btnReubicarPorFecha;
         private Button btnPaso3;
-        private Panel panelOpcional;
 
-        // 👉 EVENTO para que Home escuche
         public event Action<string> Paso2Completado;
 
         public Paso2(Panel panelBotones, ProgressBar progressBar, Label lblRutaArchivo, Form form, string rutaExcelAnterior)
@@ -51,8 +48,8 @@ namespace Automatizacion_excel.Paso2
 
             Button btnCargarNuevo = new Button
             {
-                Text = "📂 Cargar segundo Excel",
-                Width = 200,
+                Text = "📂 Cargar segundo Excel (SAS)",
+                Width = 250,
                 Height = 40,
                 Location = new Point(10, 60)
             };
@@ -68,79 +65,33 @@ namespace Automatizacion_excel.Paso2
             };
             panelBotones.Controls.Add(lblRutaSegundoArchivo);
 
-            Button btnReubicarPorFecha = new Button
+            btnReubicarPorFecha = new Button
             {
-                Text = "🔁 Reubicar operaciones por fecha",
-                Width = 300,
+                Text = "⚙️ Procesar PENDIENTES-EXEP ANTICIPO",
+                Width = 350,
                 Height = 40,
-                Location = new Point(10, 150)
+                Location = new Point(10, 160),
+                Enabled = false
             };
             btnReubicarPorFecha.Click += BtnReubicarPorFecha_Click;
             panelBotones.Controls.Add(btnReubicarPorFecha);
-
-            Button btnMostrarOpcional = new Button
-            {
-                Text = "⚙️ Opcional (solo para feriados, etc.)",
-                Width = 300,
-                Height = 40,
-                Location = new Point(10, 200)
-            };
-            btnMostrarOpcional.Click += BtnMostrarOpcional_Click;
-            panelBotones.Controls.Add(btnMostrarOpcional);
-
-            panelOpcional = new Panel
-            {
-                Visible = false,
-                Location = new Point(10, 250),
-                Size = new Size(700, 300)
-            };
-            panelBotones.Controls.Add(panelOpcional);
-
-            Label lblFecha = new Label
-            {
-                Text = "📅 Fecha (columna Z):",
-                AutoSize = true,
-                Location = new Point(0, 0)
-            };
-            panelOpcional.Controls.Add(lblFecha);
-
-            pickerFechaSeleccionada = new DateTimePicker
-            {
-                Format = DateTimePickerFormat.Custom,
-                CustomFormat = "d/M/yyyy",
-                Width = 150,
-                Location = new Point(0, 30)
-            };
-            panelOpcional.Controls.Add(pickerFechaSeleccionada);
-
-            btnProcesarDesdeExcepcion = new Button
-            {
-                Text = "➕ Agregar operaciones desde excepción",
-                Width = 300,
-                Height = 40,
-                Location = new Point(0, 80),
-                Enabled = false
-            };
-            btnProcesarDesdeExcepcion.Click += BtnProcesarDesdeExcepcion_Click;
-            panelOpcional.Controls.Add(btnProcesarDesdeExcepcion);
 
             lblEstadoProceso = new Label
             {
                 Text = "⏳ Esperando acción...",
                 AutoSize = true,
                 Font = new Font("Segoe UI", 9, FontStyle.Italic),
-                Location = new Point(10, 570)
+                Location = new Point(10, 230)
             };
             panelBotones.Controls.Add(lblEstadoProceso);
 
-            // Botón para seguir con Paso 3 (inicialmente oculto)
             btnPaso3 = new Button
             {
-                Text = "➡️ Seguir con el Paso 3",
-                Width = 200,
+                Text = "➡️ Seguir con el Paso 3 (manual)",
+                Width = 250,
                 Height = 40,
-                Location = new Point(10, 620),
-                Visible = false
+                Location = new Point(10, 270),
+                Visible = true // se sigue mostrando
             };
             btnPaso3.Click += BtnPaso3_Click;
             panelBotones.Controls.Add(btnPaso3);
@@ -160,48 +111,11 @@ namespace Automatizacion_excel.Paso2
             {
                 rutaExcelPaso2 = ofd.FileName;
                 lblRutaSegundoArchivo.Text = $"📁 Segundo archivo cargado:\n{rutaExcelPaso2}";
-                btnProcesarDesdeExcepcion.Enabled = true;
+                btnReubicarPorFecha.Enabled = true;
             }
         }
 
-        private void BtnMostrarOpcional_Click(object sender, EventArgs e)
-        {
-            panelOpcional.Visible = !panelOpcional.Visible;
-        }
-
-        private void BtnProcesarDesdeExcepcion_Click(object sender, EventArgs e)
-        {
-            string fechaSeleccionada = pickerFechaSeleccionada.Value.ToString("d/M/yyyy");
-            var servicio = new OperacionesDesdeExcepcionService();
-
-            try
-            {
-                var filas = servicio.GenerarFilasDesdeExcepcion(rutaExcelPaso1, fechaSeleccionada, ActualizarEstado);
-
-                if (filas.Count == 0)
-                {
-                    MessageBox.Show("No se encontraron filas con esa fecha en la hoja 'excepcion anticipo'.", "Sin resultados", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                    return;
-                }
-
-                var confirmar = MessageBox.Show($"Se encontraron {filas.Count} filas. ¿Deseás agregarlas al SAS del archivo original y también al nuevo?",
-                    "Confirmación", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
-
-                if (confirmar != DialogResult.Yes) return;
-
-                servicio.AgregarFilasAlSAS(rutaExcelPaso1, filas, ActualizarEstado);
-                servicio.AgregarFilasAlSAS(rutaExcelPaso2, filas, ActualizarEstado);
-
-                MessageBox.Show("✔ Operaciones agregadas exitosamente en ambos archivos SAS.", "Éxito", MessageBoxButtons.OK, MessageBoxIcon.Information);
-            }
-            catch (Exception ex)
-            {
-                ActualizarEstado("❌ Error inesperado: " + ex.Message, 0);
-                MessageBox.Show("Ocurrió un error:\n" + ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-        }
-
-        private void BtnReubicarPorFecha_Click(object sender, EventArgs e)
+        private async void BtnReubicarPorFecha_Click(object sender, EventArgs e)
         {
             if (string.IsNullOrEmpty(rutaExcelPaso2))
             {
@@ -209,49 +123,17 @@ namespace Automatizacion_excel.Paso2
                 return;
             }
 
-            FolderBrowserDialog folderQuitadas = new FolderBrowserDialog
-            {
-                Description = "Seleccioná la carpeta donde se guardarán las operaciones quitadas"
-            };
-            if (folderQuitadas.ShowDialog() != DialogResult.OK) return;
-
-            FolderBrowserDialog folderAgregadas = new FolderBrowserDialog
-            {
-                Description = "Seleccioná la carpeta donde se guardarán las operaciones agregadas"
-            };
-            if (folderAgregadas.ShowDialog() != DialogResult.OK) return;
-
-            DateTimePicker fechaPicker = new DateTimePicker
-            {
-                Format = DateTimePickerFormat.Custom,
-                CustomFormat = "d/M/yyyy",
-                Width = 200
-            };
-            var inputForm = new Form
-            {
-                Text = "Seleccioná la fecha máxima permitida",
-                Width = 300,
-                Height = 150,
-                FormBorderStyle = FormBorderStyle.FixedDialog,
-                StartPosition = FormStartPosition.CenterScreen
-            };
-            fechaPicker.Location = new Point(30, 20);
-            inputForm.Controls.Add(fechaPicker);
-            Button btnOK = new Button { Text = "Aceptar", DialogResult = DialogResult.OK, Location = new Point(100, 60) };
-            inputForm.Controls.Add(btnOK);
-            inputForm.AcceptButton = btnOK;
-
-            if (inputForm.ShowDialog() != DialogResult.OK) return;
-
-            DateTime fechaCorte = fechaPicker.Value;
-
             try
             {
-                var servicio = new OperacionesPorFechaService();
-                servicio.ProcesarOperaciones(rutaExcelPaso2, fechaCorte, folderQuitadas.SelectedPath, folderAgregadas.SelectedPath, ActualizarEstado);
+                var servicio = new ProcesarExcepcionAnticipoService();
+                ActualizarEstado("🚀 Iniciando proceso completo...", 10);
 
-                MessageBox.Show("✔ Operaciones reubicadas correctamente.", "Éxito", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                await System.Threading.Tasks.Task.Run(() =>
+                {
+                    servicio.EjecutarProceso(rutaExcelPaso2, ActualizarEstado);
+                });
 
+                MessageBox.Show("✔ Proceso completado correctamente.", "Éxito", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 btnPaso3.Visible = true;
             }
             catch (Exception ex)
@@ -264,30 +146,63 @@ namespace Automatizacion_excel.Paso2
         private void BtnPaso3_Click(object sender, EventArgs e)
         {
             var confirmar = MessageBox.Show(
-                "Antes de continuar, controlá el archivo SAS.\n¿Deseás seguir con el Paso 3?",
+                "Controlá el archivo SAS antes de continuar.\n¿Deseás seguir con el Paso 3 manualmente?",
                 "Confirmación",
                 MessageBoxButtons.YesNo,
                 MessageBoxIcon.Question);
 
             if (confirmar == DialogResult.Yes && !string.IsNullOrEmpty(rutaExcelPaso2))
             {
-                // 👉 Emitir evento, que captará Home.cs
                 Paso2Completado?.Invoke(rutaExcelPaso2);
             }
         }
 
         private void ActualizarEstado(string mensaje, int progreso = -1)
         {
-            if (lblEstadoProceso != null)
-                lblEstadoProceso.Text = mensaje;
-
-            if (progressBar != null && progreso >= 0)
+            try
             {
-                progressBar.Visible = true;
-                progressBar.Value = Math.Min(Math.Max(progreso, 0), 100);
-            }
+                // función local para tocar la UI
+                void UpdateUI()
+                {
+                    if (lblEstadoProceso != null && !lblEstadoProceso.IsDisposed)
+                        lblEstadoProceso.Text = mensaje ?? string.Empty;
 
-            Application.DoEvents(); // Forzar UI update
+                    if (progressBar != null && !progressBar.IsDisposed && progreso >= 0)
+                    {
+                        progressBar.Visible = true;
+                        int val = Math.Min(Math.Max(progreso, 0), 100);
+                        // evitar InvalidOperationException si Value == 100 y luego bajamos
+                        if (val == 100)
+                        {
+                            progressBar.Value = 100;
+                        }
+                        else
+                        {
+                            if (progressBar.Value == 100) progressBar.Value = 0;
+                            progressBar.Value = val;
+                        }
+                    }
+                }
+
+                // invocar en el hilo de UI si hace falta
+                if (formularioPrincipal != null && formularioPrincipal.IsHandleCreated)
+                {
+                    if (formularioPrincipal.InvokeRequired)
+                        formularioPrincipal.BeginInvoke((Action)(() => UpdateUI()));
+                    else
+                        UpdateUI();
+                }
+                else
+                {
+                    // fallback: si no hay handle aún, intentamos actualizar directo
+                    UpdateUI();
+                }
+            }
+            catch (ObjectDisposedException)
+            {
+                // La ventana ya se cerró; ignorar actualizaciones
+            }
         }
+
     }
 }

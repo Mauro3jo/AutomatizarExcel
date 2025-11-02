@@ -150,7 +150,7 @@ namespace Automatizacion_excel.Paso1
             btnPaso2.Text = "Seguir con el Paso 2";
             btnPaso2.Width = 200;
             btnPaso2.Height = 40;
-            btnPaso2.Visible = false;
+            btnPaso2.Visible = true;
             btnPaso2.Click += BtnPaso2_Click;
             panelBotones.Controls.Add(btnPaso2);
 

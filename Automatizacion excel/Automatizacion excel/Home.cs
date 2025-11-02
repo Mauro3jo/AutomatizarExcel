@@ -1,7 +1,8 @@
 ﻿using System;
 using System.Windows.Forms;
 using Automatizacion_excel.Formularios;
-using Automatizacion_excel.RecortarExcel; // <--- ¡importante!
+using Automatizacion_excel.RecortarExcel;
+using Automatizacion_excel.Paso2; // <--- agregado para SubirExcelAnticipo
 
 namespace Automatizacion_excel
 {
@@ -11,31 +12,47 @@ namespace Automatizacion_excel
         private Automatizacion_excel.Paso2.Paso2 paso2;
         private Automatizacion_excel.Paso3.Paso3 paso3;
         private Automatizacion_excel.Paso4.Paso4 paso4;
-
         private Automatizacion_excel.QR.Paso1QR paso1QR;
 
-        // Indica cuál flujo está activo
         private enum FlujoActivo { Ninguno, Fiserv, QR }
         private FlujoActivo flujoActual = FlujoActivo.Ninguno;
 
-        // <--- BOTÓN NUEVO
         private Button btnRecortarMovimientos;
+        private Button btnSubirExcelAnticipo; // <--- nuevo botón
 
         public Home()
         {
             InitializeComponent();
 
-            // --- Agregado: botón recortar movimientos al lado del IIBB
+            // Botón Recortar Movimientos
             btnRecortarMovimientos = new Button();
             btnRecortarMovimientos.Text = "Recortar Movimientos";
             btnRecortarMovimientos.Width = 180;
             btnRecortarMovimientos.Height = 40;
             btnRecortarMovimientos.Location = new System.Drawing.Point(
-                btnVerIIBB.Right + 10, // a la par del botón IIBB, separadito
+                btnVerIIBB.Right + 10,
                 btnVerIIBB.Top
             );
             btnRecortarMovimientos.Click += BtnRecortarMovimientos_Click;
             this.Controls.Add(btnRecortarMovimientos);
+
+            // --- NUEVO BOTÓN: Subir Excel Anticipo (a la izquierda del botón Ver y editar tasas)
+            btnSubirExcelAnticipo = new Button();
+            btnSubirExcelAnticipo.Text = "Subir Excel Anticipo";
+            btnSubirExcelAnticipo.Width = 180;
+            btnSubirExcelAnticipo.Height = 40;
+            btnSubirExcelAnticipo.Location = new System.Drawing.Point(
+                btnVerTasas.Left - 190, // 10px a la izquierda de Ver y editar tasas
+                btnVerTasas.Top
+            );
+            btnSubirExcelAnticipo.Click += BtnSubirExcelAnticipo_Click;
+            this.Controls.Add(btnSubirExcelAnticipo);
+        }
+
+        private void BtnSubirExcelAnticipo_Click(object sender, EventArgs e)
+        {
+            var subir = new SubirExcelAnticipo();
+            subir.Ejecutar();
         }
 
         private void btnFiserv_Click(object sender, EventArgs e)
@@ -75,17 +92,11 @@ namespace Automatizacion_excel
         private void btnSeleccionarArchivo_Click(object sender, EventArgs e)
         {
             if (flujoActual == FlujoActivo.Fiserv)
-            {
                 paso1?.SeleccionarArchivo();
-            }
             else if (flujoActual == FlujoActivo.QR)
-            {
                 paso1QR?.SeleccionarArchivo();
-            }
             else
-            {
                 MessageBox.Show("Primero elegí Fiserv o QR antes de seleccionar un archivo.");
-            }
         }
 
         private void btnVerTasas_Click(object sender, EventArgs e)
@@ -100,7 +111,6 @@ namespace Automatizacion_excel
             formIIBB.ShowDialog();
         }
 
-        // --- AGREGADO: Lógica del nuevo botón
         private void BtnRecortarMovimientos_Click(object sender, EventArgs e)
         {
             OpenFileDialog ofd = new OpenFileDialog();
@@ -118,18 +128,13 @@ namespace Automatizacion_excel
                 {
                     try
                     {
-                        // Ahora el método devuelve si copió movimientos o no
                         bool huboRecorte = Recortar_Excel.ProcesarArchivo(ofd.FileName, sfd.FileName);
 
                         if (huboRecorte)
-                        {
                             MessageBox.Show("Archivo exportado correctamente a:\n" + sfd.FileName, "¡Éxito!");
-                        }
                         else
                         {
-                            // Intentar con el método alternativo (si lo tenés)
                             bool huboRecorte2 = Recortar_Excel2.ProcesarArchivo(ofd.FileName, sfd.FileName);
-
                             if (huboRecorte2)
                                 MessageBox.Show("Archivo exportado con el método alternativo a:\n" + sfd.FileName, "¡Éxito (alternativo)!");
                             else
@@ -143,9 +148,5 @@ namespace Automatizacion_excel
                 }
             }
         }
-
-
-
-
     }
 }
