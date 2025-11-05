@@ -15,6 +15,7 @@ namespace Automatizacion_excel.Paso2
 
         public ProcesarExcepcionAnticipoService()
         {
+            // 📂 Carga la cadena de conexión desde appsettings.json
             var config = new ConfigurationBuilder()
                 .SetBasePath(Directory.GetCurrentDirectory())
                 .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
@@ -23,6 +24,9 @@ namespace Automatizacion_excel.Paso2
             connectionString = config.GetConnectionString("MiConexion");
         }
 
+        // ---------------------------------------------------------------------
+        // 🔹 Método principal que ejecuta todo el flujo
+        // ---------------------------------------------------------------------
         public void EjecutarProceso(string rutaExcel, Action<string, int>? reportar = null)
         {
             var excelApp = new Excel.Application();
@@ -44,47 +48,52 @@ namespace Automatizacion_excel.Paso2
                 {
                     conn.Open();
 
-                    // --- 1) De Excel → Base y “Op Quitadas”
+                    // --- 🔹 1) Recorre el Excel y analiza las filas válidas
                     for (int i = lastRowHoja1; i >= 2; i--)
                     {
                         string nroComercio = Convert.ToString((hojaPrincipal.Cells[i, 5] as Excel.Range)?.Value2)?.Trim();
                         if (string.IsNullOrEmpty(nroComercio)) continue;
 
+                        // Verifica si la terminal está activa
                         if (TerminalActiva(conn, nroComercio))
                         {
                             var fila = LeerFila(hojaPrincipal, i);
                             int.TryParse(fila[16]?.ToString(), out int cuotas);
                             string tarjeta = fila[18]?.ToString()?.Trim().ToUpper() ?? "";
 
-                            // ❌ No se procesan ni se quitan las que no sean VISA, MASTER, ARGENCARD o sean cuota 0
+                            // ❌ No procesar ni eliminar:
+                            // - Cabal, Amex, Maestro, Naranja o Cuota 0 (débito)
+                            // ✅ Solo Visa, Master o ArgenCard con cuotas > 0
                             if (cuotas == 0 ||
                                 !(tarjeta.Contains("VISA") || tarjeta.Contains("MASTER") || tarjeta.Contains("ARGENCARD")))
                                 continue;
 
-                            // Copiar al final de “Op Quitadas”
+                            // 📋 Copiar al final de la hoja “Op Quitadas”
                             int lastRowQuitadas = hojaQuitadas.Cells.SpecialCells(Excel.XlCellType.xlCellTypeLastCell).Row + 1;
                             PegarFila(hojaQuitadas, lastRowQuitadas, fila);
 
-                            // Insertar en base solo si cumple condiciones válidas
+                            // 💾 Insertar en base con la lógica de días y fechas
                             InsertarEnBase(conn, fila);
 
-                            // Eliminar de Hoja1
+                            // ❌ Eliminar de la hoja principal
                             hojaPrincipal.Rows[i].Delete();
                         }
                     }
 
-                    // --- 2) De Base → Excel
+                    // --- 🔹 2) Cargar operaciones pendientes desde la base al Excel
                     reportar?.Invoke("📥 Agregando operaciones desde la base a Hoja1...", 60);
                     AgregarPendientesAHoja1(conn, hojaPrincipal);
 
                     conn.Close();
                 }
 
+                // ✅ Guardar los cambios
                 wb.Save();
                 reportar?.Invoke("✅ Proceso completado correctamente y guardado.", 100);
             }
             finally
             {
+                // Limpieza de objetos COM
                 if (hojaPrincipal != null) Marshal.ReleaseComObject(hojaPrincipal);
                 if (hojaQuitadas != null) Marshal.ReleaseComObject(hojaQuitadas);
                 if (wb != null)
@@ -97,8 +106,9 @@ namespace Automatizacion_excel.Paso2
             }
         }
 
-        // ---------- MÉTODOS PRINCIPALES ----------
-
+        // ---------------------------------------------------------------------
+        // 🔹 Verifica si la terminal está activa en la tabla
+        // ---------------------------------------------------------------------
         private bool TerminalActiva(SqlConnection conn, string nroTerminal)
         {
             const string sql = @"SELECT COUNT(*) FROM [dbo].[TerminalesExcepcionAnticipo]
@@ -110,6 +120,9 @@ namespace Automatizacion_excel.Paso2
             }
         }
 
+        // ---------------------------------------------------------------------
+        // 🔹 Inserta una operación válida en ExcepcionAnticipo
+        // ---------------------------------------------------------------------
         private void InsertarEnBase(SqlConnection conn, object[] fila)
         {
             DateTime fechaOperacion = ParsearFecha(fila[0]) ?? DateTime.MinValue;
@@ -126,9 +139,30 @@ namespace Automatizacion_excel.Paso2
             string tipoPago = cuotas == 1 ? "CRÉDITO 1 PAGO" : "CRÉDITO 2 O MÁS PAGOS";
             string categoriaTarjeta = DetectarCategoriaTarjeta(tarjeta);
 
-            int dias = ObtenerDiasPlazo(conn, tipoPago, categoriaTarjeta, fila[8]);
+            // 🧮 Calcular descuento correctamente (detecta "8,66%" o "0,0866")
+            decimal totalDescuento = 0;
+            if (fila[8] != null)
+            {
+                string s = fila[8].ToString().Replace("%", "").Trim().Replace(",", ".");
+                if (decimal.TryParse(s, NumberStyles.Any, CultureInfo.InvariantCulture, out var val))
+                {
+                    if (val > 1) val = val / 100; // si viene como 8.66 => 0.0866
+                    totalDescuento = val;
+                }
+            }
+
+            int dias;
+            if (cuotas >= 2)
+                dias = 9; // 2 o más cuotas
+            else if (cuotas == 1 && totalDescuento > 0.04m)
+                dias = 17; // 1 pago con descuento mayor a 4%
+            else
+                dias = 7; // 1 pago con descuento menor o igual a 4%
+
+            // 📅 Calcular fecha de acreditación hábil desde el día siguiente
             DateTime fechaAAgregar = SumarDiasHabiles(fechaOperacion, dias);
 
+            // 💾 Inserción en SQL
             const string sql = @"
                 INSERT INTO [dbo].[ExcepcionAnticipo]
                 ([FechaOperacion],[FechaPresentacion],[FechaPago],[NroCupon],
@@ -161,6 +195,9 @@ namespace Automatizacion_excel.Paso2
             }
         }
 
+        // ---------------------------------------------------------------------
+        // 🔹 Agrega operaciones pendientes desde la base a la hoja principal
+        // ---------------------------------------------------------------------
         private void AgregarPendientesAHoja1(SqlConnection conn, Excel.Worksheet hoja)
         {
             object valorC2 = (hoja.Cells[2, 3] as Excel.Range)?.Value2;
@@ -168,22 +205,33 @@ namespace Automatizacion_excel.Paso2
             string fechaPagoTexto = fechaPagoModelo?.ToString("dd/MM/yyyy");
 
             const string sql = @"
-        SELECT FechaOperacion, FechaPresentacion, FechaPago, NroCupon, NroComercio, NroTarjeta,
-               Moneda, TotalBruto, TotalDescuento, TotalNeto, EntidadPagadora, CuentaBancaria,
-               NroLiquidacion, NroLote, TipoLiquidacion, Estado, Cuotas, NroAutorizacion,
-               Tarjeta, TipoOperacion, ComercioParticipante, PromocionPlan
-        FROM [dbo].[ExcepcionAnticipo]
-        WHERE EstadoNuevo = 'NO PAGADO' 
-        AND FechaAAgregar <= GETDATE()
-        AND ISNULL(Cuotas, 0) > 0
-        ORDER BY ID";
+                SELECT FechaOperacion, FechaPresentacion, FechaPago, NroCupon, NroComercio, NroTarjeta,
+                       Moneda, TotalBruto, TotalDescuento, TotalNeto, EntidadPagadora, CuentaBancaria,
+                       NroLiquidacion, NroLote, TipoLiquidacion, Estado, Cuotas, NroAutorizacion,
+                       Tarjeta, TipoOperacion, ComercioParticipante, PromocionPlan
+                FROM [dbo].[ExcepcionAnticipo]
+                WHERE EstadoNuevo = 'NO PAGADO' 
+                AND FechaAAgregar <= GETDATE()
+                AND ISNULL(Cuotas, 0) > 0
+                ORDER BY ID";
 
             using (var cmd = new SqlCommand(sql, conn))
             using (var reader = cmd.ExecuteReader())
             {
                 while (reader.Read())
                 {
-                    int nextRow = hoja.Cells.SpecialCells(Excel.XlCellType.xlCellTypeLastCell).Row + 1;
+                    // 🧩 Busca la primera fila vacía (sin fecha operación ni fecha pago)
+                    int nextRow = 2;
+                    while (true)
+                    {
+                        var celdaOp = (hoja.Cells[nextRow, 1] as Excel.Range)?.Value2;
+                        var celdaPago = (hoja.Cells[nextRow, 3] as Excel.Range)?.Value2;
+                        if (celdaOp == null && celdaPago == null)
+                            break;
+                        nextRow++;
+                    }
+
+                    // 📋 Pega los valores en la fila encontrada
                     for (int col = 1; col <= 22; col++)
                     {
                         object valor = reader.GetValue(col - 1);
@@ -192,26 +240,45 @@ namespace Automatizacion_excel.Paso2
                         else if (col == 9)
                             valor = "";
                         else if (col == 16)
-                            valor = "PENDIENTE-EXEP ANTICIPO";
+                            valor = "PENDIENTE-EXCEP ANTICIPO";
                         hoja.Cells[nextRow, col].Value2 = valor;
                     }
                 }
             }
 
+            // 🔄 Actualiza el estado de las operaciones vencidas a PAGADO
             const string updateSql = @"
-        UPDATE [dbo].[ExcepcionAnticipo]
-        SET EstadoNuevo = 'PAGADO', FechaPagado = GETDATE()
-        WHERE EstadoNuevo = 'NO PAGADO'
-        AND FechaAAgregar <= GETDATE()
-        AND ISNULL(Cuotas, 0) > 0;";
+                UPDATE [dbo].[ExcepcionAnticipo]
+                SET EstadoNuevo = 'PAGADO', FechaPagado = GETDATE()
+                WHERE EstadoNuevo = 'NO PAGADO'
+                AND FechaAAgregar <= GETDATE()
+                AND ISNULL(Cuotas, 0) > 0;";
             using (var cmd = new SqlCommand(updateSql, conn))
             {
                 cmd.ExecuteNonQuery();
             }
         }
 
-        // ---------- UTILIDADES ----------
+        // ---------------------------------------------------------------------
+        // 🔹 Calcula fecha hábil sumando días (sin fines de semana)
+        // ---------------------------------------------------------------------
+        private DateTime SumarDiasHabiles(DateTime fechaInicio, int dias)
+        {
+            int agregados = 0;
+            DateTime fecha = fechaInicio.AddDays(1);
+            while (agregados < dias)
+            {
+                if (fecha.DayOfWeek != DayOfWeek.Saturday && fecha.DayOfWeek != DayOfWeek.Sunday)
+                    agregados++;
+                if (agregados < dias)
+                    fecha = fecha.AddDays(1);
+            }
+            return fecha;
+        }
 
+        // ---------------------------------------------------------------------
+        // 🔹 Utilidades auxiliares
+        // ---------------------------------------------------------------------
         private void PegarFila(Excel.Worksheet hojaDestino, int filaDestino, object[] filaOrigen)
         {
             for (int col = 0; col < filaOrigen.Length; col++)
@@ -253,44 +320,6 @@ namespace Automatizacion_excel.Paso2
             if (tarjeta.Contains("NARANJA"))
                 return "No Bancarizadas (Naranja Visa, Naranja Master, Cencosud, etc.)";
             return "";
-        }
-
-        private int ObtenerDiasPlazo(SqlConnection conn, string tipoPago, string categoriaTarjeta, object totalDescuentoObj)
-        {
-            decimal totalDescuento = 0;
-            if (totalDescuentoObj != null && decimal.TryParse(
-                    totalDescuentoObj.ToString().Replace("%", "").Replace(",", ".").Trim(),
-                    NumberStyles.Any, CultureInfo.InvariantCulture, out var val))
-                totalDescuento = val;
-
-            // 🟡 Excepción: Crédito 1 pago con >4% descuento
-            if (tipoPago == "CRÉDITO 1 PAGO" && totalDescuento > 4)
-                return 17;
-
-            // 🔵 Caso normal
-            const string sql = @"SELECT TOP 1 Dias FROM [dbo].[PlazosDeAcreditaciones]
-                                 WHERE TipoPago = @TipoPago AND Tarjetas LIKE '%' + @Tarjetas + '%'";
-            using (var cmd = new SqlCommand(sql, conn))
-            {
-                cmd.Parameters.AddWithValue("@TipoPago", tipoPago);
-                cmd.Parameters.AddWithValue("@Tarjetas", categoriaTarjeta);
-                var result = cmd.ExecuteScalar();
-                return result != null ? Convert.ToInt32(result) : 0;
-            }
-        }
-
-        private DateTime SumarDiasHabiles(DateTime fechaInicio, int dias)
-        {
-            int agregados = 0;
-            DateTime fecha = fechaInicio.AddDays(1); // empieza al día siguiente
-            while (agregados < dias)
-            {
-                if (fecha.DayOfWeek != DayOfWeek.Saturday && fecha.DayOfWeek != DayOfWeek.Sunday)
-                    agregados++;
-                if (agregados < dias)
-                    fecha = fecha.AddDays(1);
-            }
-            return fecha;
         }
 
         private object LimpiarDecimal(object valor)
