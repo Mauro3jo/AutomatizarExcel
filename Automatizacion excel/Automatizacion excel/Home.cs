@@ -2,7 +2,7 @@
 using System.Windows.Forms;
 using Automatizacion_excel.Formularios;
 using Automatizacion_excel.RecortarExcel;
-using Automatizacion_excel.Paso2; // <--- agregado para SubirExcelAnticipo
+using Automatizacion_excel.Paso2; // incluye Subir y Descargar Anticipo
 
 namespace Automatizacion_excel
 {
@@ -18,13 +18,14 @@ namespace Automatizacion_excel
         private FlujoActivo flujoActual = FlujoActivo.Ninguno;
 
         private Button btnRecortarMovimientos;
-        private Button btnSubirExcelAnticipo; // <--- nuevo botón
+        private Button btnSubirExcelAnticipo;
+        private Button btnDescargarExcelAnticipo; // 🆕 nuevo botón
 
         public Home()
         {
             InitializeComponent();
 
-            // Botón Recortar Movimientos
+            // --- Botón Recortar Movimientos ---
             btnRecortarMovimientos = new Button();
             btnRecortarMovimientos.Text = "Recortar Movimientos";
             btnRecortarMovimientos.Width = 180;
@@ -36,25 +37,53 @@ namespace Automatizacion_excel
             btnRecortarMovimientos.Click += BtnRecortarMovimientos_Click;
             this.Controls.Add(btnRecortarMovimientos);
 
-            // --- NUEVO BOTÓN: Subir Excel Anticipo (a la izquierda del botón Ver y editar tasas)
+            // --- Botón Subir Excel Anticipo ---
             btnSubirExcelAnticipo = new Button();
             btnSubirExcelAnticipo.Text = "Subir Excel Anticipo";
             btnSubirExcelAnticipo.Width = 180;
             btnSubirExcelAnticipo.Height = 40;
             btnSubirExcelAnticipo.Location = new System.Drawing.Point(
-                btnVerTasas.Left - 190, // 10px a la izquierda de Ver y editar tasas
+                btnVerTasas.Left - 190, // 10px a la izquierda de “Ver y editar tasas”
                 btnVerTasas.Top
             );
             btnSubirExcelAnticipo.Click += BtnSubirExcelAnticipo_Click;
             this.Controls.Add(btnSubirExcelAnticipo);
+
+            // --- 🆕 Botón Descargar Excel Anticipo ---
+            btnDescargarExcelAnticipo = new Button();
+            btnDescargarExcelAnticipo.Text = "Descargar Excel Anticipo";
+            btnDescargarExcelAnticipo.Width = 180;
+            btnDescargarExcelAnticipo.Height = 40;
+            btnDescargarExcelAnticipo.Location = new System.Drawing.Point(
+                btnSubirExcelAnticipo.Left,
+                btnSubirExcelAnticipo.Bottom + 10 // justo debajo
+            );
+            btnDescargarExcelAnticipo.Click += BtnDescargarExcelAnticipo_Click;
+            this.Controls.Add(btnDescargarExcelAnticipo);
         }
 
+        // --- Evento: subir Excel Anticipo ---
         private void BtnSubirExcelAnticipo_Click(object sender, EventArgs e)
         {
             var subir = new SubirExcelAnticipo();
             subir.Ejecutar();
         }
 
+        // --- 🆕 Evento: descargar Excel Anticipo ---
+        private void BtnDescargarExcelAnticipo_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                var descargar = new DescargarExcelAnticipo();
+                descargar.Ejecutar();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Error al descargar Excel de anticipos:\n" + ex.Message, "Error");
+            }
+        }
+
+        // --- Flujo Fiserv ---
         private void btnFiserv_Click(object sender, EventArgs e)
         {
             flujoActual = FlujoActivo.Fiserv;
@@ -82,6 +111,7 @@ namespace Automatizacion_excel
             paso4.Ejecutar();
         }
 
+        // --- Flujo QR ---
         private void btnQR_Click(object sender, EventArgs e)
         {
             flujoActual = FlujoActivo.QR;
@@ -111,6 +141,7 @@ namespace Automatizacion_excel
             formIIBB.ShowDialog();
         }
 
+        // --- Recortar movimientos ---
         private void BtnRecortarMovimientos_Click(object sender, EventArgs e)
         {
             OpenFileDialog ofd = new OpenFileDialog();

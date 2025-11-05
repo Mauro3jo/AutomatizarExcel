@@ -54,14 +54,19 @@ namespace Automatizacion_excel.Paso2
                         {
                             var fila = LeerFila(hojaPrincipal, i);
                             int.TryParse(fila[16]?.ToString(), out int cuotas);
+                            string tarjeta = fila[18]?.ToString()?.Trim().ToUpper() ?? "";
+
+                            // ❌ No se procesan ni se quitan las que no sean VISA, MASTER, ARGENCARD o sean cuota 0
+                            if (cuotas == 0 ||
+                                !(tarjeta.Contains("VISA") || tarjeta.Contains("MASTER") || tarjeta.Contains("ARGENCARD")))
+                                continue;
 
                             // Copiar al final de “Op Quitadas”
                             int lastRowQuitadas = hojaQuitadas.Cells.SpecialCells(Excel.XlCellType.xlCellTypeLastCell).Row + 1;
                             PegarFila(hojaQuitadas, lastRowQuitadas, fila);
 
-                            // Insertar en base solo si cuotas > 0 (NO débito)
-                            if (cuotas > 0)
-                                InsertarEnBase(conn, fila);
+                            // Insertar en base solo si cumple condiciones válidas
+                            InsertarEnBase(conn, fila);
 
                             // Eliminar de Hoja1
                             hojaPrincipal.Rows[i].Delete();
@@ -110,14 +115,18 @@ namespace Automatizacion_excel.Paso2
             DateTime fechaOperacion = ParsearFecha(fila[0]) ?? DateTime.MinValue;
             DateTime fechaPago = ParsearFecha(fila[2]) ?? DateTime.MinValue;
             string tarjeta = fila[18]?.ToString()?.Trim().ToUpper() ?? "";
+
             int.TryParse(fila[16]?.ToString(), out int cuotas);
 
-            string tipoPago = cuotas == 0 ? "DÉBITO" :
-                              cuotas == 1 ? "CRÉDITO 1 PAGO" :
-                              "CRÉDITO 2 O MÁS PAGOS";
+            // ❌ Solo se insertan VISA, MASTER y ARGENCARD con cuotas > 0
+            if (cuotas == 0 ||
+                !(tarjeta.Contains("VISA") || tarjeta.Contains("MASTER") || tarjeta.Contains("ARGENCARD")))
+                return;
 
+            string tipoPago = cuotas == 1 ? "CRÉDITO 1 PAGO" : "CRÉDITO 2 O MÁS PAGOS";
             string categoriaTarjeta = DetectarCategoriaTarjeta(tarjeta);
-            int dias = ObtenerDiasPlazo(conn, tipoPago, categoriaTarjeta);
+
+            int dias = ObtenerDiasPlazo(conn, tipoPago, categoriaTarjeta, fila[8]);
             DateTime fechaAAgregar = SumarDiasHabiles(fechaOperacion, dias);
 
             const string sql = @"
@@ -154,7 +163,6 @@ namespace Automatizacion_excel.Paso2
 
         private void AgregarPendientesAHoja1(SqlConnection conn, Excel.Worksheet hoja)
         {
-            // ✅ Tomar valor literal de C2 (sin alterar formato Excel)
             object valorC2 = (hoja.Cells[2, 3] as Excel.Range)?.Value2;
             DateTime? fechaPagoModelo = ParsearFecha(valorC2);
             string fechaPagoTexto = fechaPagoModelo?.ToString("dd/MM/yyyy");
@@ -175,28 +183,21 @@ namespace Automatizacion_excel.Paso2
             {
                 while (reader.Read())
                 {
-                    // Buscar la siguiente fila libre en la hoja
                     int nextRow = hoja.Cells.SpecialCells(Excel.XlCellType.xlCellTypeLastCell).Row + 1;
-
-                    // Pegar los valores uno a uno (22 columnas)
                     for (int col = 1; col <= 22; col++)
                     {
                         object valor = reader.GetValue(col - 1);
-
-                        // Ajustes especiales:
                         if (col == 3)
-                            valor = fechaPagoTexto; // 📅 Fecha de pago = la de C2
+                            valor = fechaPagoTexto;
                         else if (col == 9)
-                            valor = ""; // 💸 Total Descuento vacío
+                            valor = "";
                         else if (col == 16)
-                            valor = "PENDIENTE-EXEP ANTICIPO"; // 📌 Estado
-
+                            valor = "PENDIENTE-EXEP ANTICIPO";
                         hoja.Cells[nextRow, col].Value2 = valor;
                     }
                 }
             }
 
-            // ✅ Una vez que todas fueron pegadas, se marcan como pagadas en la base
             const string updateSql = @"
         UPDATE [dbo].[ExcepcionAnticipo]
         SET EstadoNuevo = 'PAGADO', FechaPagado = GETDATE()
@@ -208,7 +209,6 @@ namespace Automatizacion_excel.Paso2
                 cmd.ExecuteNonQuery();
             }
         }
-
 
         // ---------- UTILIDADES ----------
 
@@ -250,12 +250,24 @@ namespace Automatizacion_excel.Paso2
             if (tarjeta.Contains("AMEX")) return "Bancarizadas (Amex)";
             if (tarjeta.Contains("VISA") || tarjeta.Contains("MASTER") || tarjeta.Contains("ARGENCARD"))
                 return "Bancarizadas (Visa - Master - ArgenCard)";
-            if (tarjeta.Contains("NARANJA")) return "No Bancarizadas (Naranja Visa, Naranja Master, Cencosud, etc.)";
+            if (tarjeta.Contains("NARANJA"))
+                return "No Bancarizadas (Naranja Visa, Naranja Master, Cencosud, etc.)";
             return "";
         }
 
-        private int ObtenerDiasPlazo(SqlConnection conn, string tipoPago, string categoriaTarjeta)
+        private int ObtenerDiasPlazo(SqlConnection conn, string tipoPago, string categoriaTarjeta, object totalDescuentoObj)
         {
+            decimal totalDescuento = 0;
+            if (totalDescuentoObj != null && decimal.TryParse(
+                    totalDescuentoObj.ToString().Replace("%", "").Replace(",", ".").Trim(),
+                    NumberStyles.Any, CultureInfo.InvariantCulture, out var val))
+                totalDescuento = val;
+
+            // 🟡 Excepción: Crédito 1 pago con >4% descuento
+            if (tipoPago == "CRÉDITO 1 PAGO" && totalDescuento > 4)
+                return 17;
+
+            // 🔵 Caso normal
             const string sql = @"SELECT TOP 1 Dias FROM [dbo].[PlazosDeAcreditaciones]
                                  WHERE TipoPago = @TipoPago AND Tarjetas LIKE '%' + @Tarjetas + '%'";
             using (var cmd = new SqlCommand(sql, conn))
@@ -270,12 +282,13 @@ namespace Automatizacion_excel.Paso2
         private DateTime SumarDiasHabiles(DateTime fechaInicio, int dias)
         {
             int agregados = 0;
-            DateTime fecha = fechaInicio;
+            DateTime fecha = fechaInicio.AddDays(1); // empieza al día siguiente
             while (agregados < dias)
             {
-                fecha = fecha.AddDays(1);
                 if (fecha.DayOfWeek != DayOfWeek.Saturday && fecha.DayOfWeek != DayOfWeek.Sunday)
                     agregados++;
+                if (agregados < dias)
+                    fecha = fecha.AddDays(1);
             }
             return fecha;
         }
