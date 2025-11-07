@@ -136,9 +136,6 @@ namespace Automatizacion_excel.Paso2
                 !(tarjeta.Contains("VISA") || tarjeta.Contains("MASTER") || tarjeta.Contains("ARGENCARD")))
                 return;
 
-            string tipoPago = cuotas == 1 ? "CRÉDITO 1 PAGO" : "CRÉDITO 2 O MÁS PAGOS";
-            string categoriaTarjeta = DetectarCategoriaTarjeta(tarjeta);
-
             // 🧮 Calcular descuento correctamente (detecta "8,66%" o "0,0866")
             decimal totalDescuento = 0;
             if (fila[8] != null)
@@ -146,7 +143,7 @@ namespace Automatizacion_excel.Paso2
                 string s = fila[8].ToString().Replace("%", "").Trim().Replace(",", ".");
                 if (decimal.TryParse(s, NumberStyles.Any, CultureInfo.InvariantCulture, out var val))
                 {
-                    if (val > 1) val = val / 100; // si viene como 8.66 => 0.0866
+                    if (val > 1) val /= 100; // si viene como 8.66 => 0.0866
                     totalDescuento = val;
                 }
             }
@@ -155,14 +152,12 @@ namespace Automatizacion_excel.Paso2
             if (cuotas >= 2)
                 dias = 9; // 2 o más cuotas
             else if (cuotas == 1 && totalDescuento > 0.04m)
-                dias = 17; // 1 pago con descuento mayor a 4%
+                dias = 17; // 1 pago con descuento > 4%
             else
-                dias = 7; // 1 pago con descuento menor o igual a 4%
+                dias = 7; // 1 pago con descuento ≤ 4%
 
-            // 📅 Calcular fecha de acreditación hábil desde el día siguiente
             DateTime fechaAAgregar = SumarDiasHabiles(fechaOperacion, dias);
 
-            // 💾 Inserción en SQL
             const string sql = @"
                 INSERT INTO [dbo].[ExcepcionAnticipo]
                 ([FechaOperacion],[FechaPresentacion],[FechaPago],[NroCupon],
@@ -202,7 +197,7 @@ namespace Automatizacion_excel.Paso2
         {
             object valorC2 = (hoja.Cells[2, 3] as Excel.Range)?.Value2;
             DateTime? fechaPagoModelo = ParsearFecha(valorC2);
-            string fechaPagoTexto = fechaPagoModelo?.ToString("dd/MM/yyyy");
+            string fechaPagoTexto = fechaPagoModelo?.ToString("dd/MM/yyyy") ?? "";
 
             const string sql = @"
                 SELECT FechaOperacion, FechaPresentacion, FechaPago, NroCupon, NroComercio, NroTarjeta,
@@ -235,12 +230,26 @@ namespace Automatizacion_excel.Paso2
                     for (int col = 1; col <= 22; col++)
                     {
                         object valor = reader.GetValue(col - 1);
+
                         if (col == 3)
-                            valor = fechaPagoTexto;
+                        {
+                            if (DateTime.TryParse(valor?.ToString(), out DateTime fechaPago))
+                                valor = fechaPago.ToString("dd/MM/yyyy");
+                            else
+                                valor = fechaPagoTexto;
+                            hoja.Cells[nextRow, col].NumberFormat = "@"; // formato texto
+                            hoja.Cells[nextRow, col].HorizontalAlignment = Excel.XlHAlign.xlHAlignCenter;
+                            hoja.Cells[nextRow, col].Interior.Color = System.Drawing.ColorTranslator.ToOle(System.Drawing.Color.LightCyan);
+                        }
                         else if (col == 9)
+                        {
                             valor = "";
+                        }
                         else if (col == 16)
+                        {
                             valor = "PENDIENTE-EXCEP ANTICIPO";
+                        }
+
                         hoja.Cells[nextRow, col].Value2 = valor;
                     }
                 }
