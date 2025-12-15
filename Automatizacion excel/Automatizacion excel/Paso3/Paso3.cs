@@ -135,7 +135,7 @@ namespace Automatizacion_excel.Paso3
                 Width = 200,
                 Height = 40,
                 Location = new Point(10, 200),
-                Visible = false
+                Visible = true
             };
             btnPaso4.Click += BtnPaso4_Click;
             panelBotones.Controls.Add(btnPaso4);

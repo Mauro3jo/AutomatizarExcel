@@ -123,30 +123,79 @@ namespace Automatizacion_excel.Paso4
 
         private void BtnControlarDiario_Click(object sender, EventArgs e)
         {
+            progressBar.Visible = true;
+            progressBar.Value = 0;
+
+            var controlador = new ControladorDiario(rutaDiario);
+
+            string resultadoFecha = "⛔ Error en fecha.";
+            string resultadoBruto = "⛔ Error al sumar BRUTO.";
+            string resultadoArancel = "⛔ Error en Arancel.";
+            string resultadoIva = "⛔ Error en IVA.";
+            string resultadoCosto = "⛔ Error en Costo Transaccional.";
+            string resultadoIIBB = "⛔ Error en IIBB.";
+
+            List<int> filasInvalidas = new List<int>();
+
             try
             {
-                progressBar.Visible = true;
-                progressBar.Value = 0;
+                // PASO 1
+                try
+                {
+                    resultadoFecha = controlador.ControlarFechaUnica(out filasInvalidas, ReportarProgreso);
+                }
+                catch (Exception ex)
+                {
+                    resultadoFecha = "❌ Error en Fecha: " + ex.Message;
+                }
 
-                var controlador = new ControladorDiario(rutaDiario);
+                // PASO 2
+                try
+                {
+                    resultadoBruto = controlador.SumarColumnaBruto(ReportarProgreso);
+                }
+                catch (Exception ex)
+                {
+                    resultadoBruto = "❌ Error sumando BRUTO: " + ex.Message;
+                }
 
-                // Paso 1: Validar Fecha
-                string resultadoFecha = controlador.ControlarFechaUnica(out var filasInvalidas, ReportarProgreso);
+                // PASO 3
+                try
+                {
+                    var (rArancel, rIva) = controlador.ValidarArancelEIVA(ReportarProgreso);
+                    resultadoArancel = rArancel;
+                    resultadoIva = rIva;
+                }
+                catch (Exception ex)
+                {
+                    resultadoArancel = "❌ Error Arancel: " + ex.Message;
+                    resultadoIva = "❌ Error IVA: " + ex.Message;
+                }
 
-                // Paso 2: Sumar Bruto
-                string resultadoBruto = controlador.SumarColumnaBruto(ReportarProgreso);
+                // PASO 4
+                try
+                {
+                    resultadoCosto = controlador.ControlarCostoTransaccional(ReportarProgreso);
+                }
+                catch (Exception ex)
+                {
+                    resultadoCosto = "❌ Error Costo Transaccional: " + ex.Message;
+                }
 
-                // Paso 3: Validar Arancel e IVA
-                var (resultadoArancel, resultadoIva) = controlador.ValidarArancelEIVA(ReportarProgreso);
+                // PASO 5
+                try
+                {
+                    var alicuotas = IIBBHelper.ObtenerAlicuotasDesdeBD();
+                    resultadoIIBB = controlador.ValidarIIBB(ReportarProgreso, alicuotas);
+                }
+                catch (Exception ex)
+                {
+                    resultadoIIBB = "❌ Error IIBB: " + ex.Message;
+                }
 
-                // Paso 4: Controlar Costo Transaccional (AE)
-                string resultadoCosto = controlador.ControlarCostoTransaccional(ReportarProgreso);
-
-                // Paso 5: Validar IIBB
-                var alicuotas = IIBBHelper.ObtenerAlicuotasDesdeBD();
-                string resultadoIIBB = controlador.ValidarIIBB(ReportarProgreso, alicuotas);
-
+                // Mostrar resultados
                 lblResultado.ForeColor = filasInvalidas.Count == 0 ? Color.Green : Color.Red;
+
                 lblResultado.Text =
                     resultadoFecha + Environment.NewLine +
                     resultadoBruto + Environment.NewLine +
@@ -160,7 +209,7 @@ namespace Automatizacion_excel.Paso4
             catch (Exception ex)
             {
                 lblResultado.ForeColor = Color.Red;
-                lblResultado.Text = "❌ Error: " + ex.Message;
+                lblResultado.Text = "❌ Error general: " + ex.Message;
             }
             finally
             {
@@ -168,6 +217,7 @@ namespace Automatizacion_excel.Paso4
                 progressBar.Value = 0;
             }
         }
+
 
         private void BtnValidarFUR_Click(object sender, EventArgs e)
         {

@@ -708,6 +708,28 @@ namespace Automatizacion_excel.Paso4
                 if (excelApp != null) Marshal.ReleaseComObject(excelApp);
             }
         }
+        private double ParseDouble(object value)
+{
+    if (value == null)
+        return 0;
+
+    string txt = Convert.ToString(value)
+                 ?.Replace("$", "")
+                 ?.Replace(" ", "")
+                 ?.Replace("(", "-")
+                 ?.Replace(")", "")
+                 ?.Replace(".", "")
+                 ?.Replace(",", ".")
+                 ?.Trim();
+
+    double.TryParse(
+        txt,
+        System.Globalization.NumberStyles.Any,
+        System.Globalization.CultureInfo.InvariantCulture,
+        out double result);
+
+    return result;
+}
 
     }
 }

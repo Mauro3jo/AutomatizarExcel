@@ -68,15 +68,15 @@ namespace Automatizacion_excel.Paso2
                                 !(tarjeta.Contains("VISA") || tarjeta.Contains("MASTER") || tarjeta.Contains("ARGENCARD")))
                                 continue;
 
-                            // 📋 Copiar al final de la hoja “Op Quitadas”
-                            int lastRowQuitadas = hojaQuitadas.Cells.SpecialCells(Excel.XlCellType.xlCellTypeLastCell).Row + 1;
-                            PegarFila(hojaQuitadas, lastRowQuitadas, fila);
+                            // 📋 PEGADO ELIMINADO: antes duplicaba en Op Quitadas
+                            //int lastRowQuitadas = hojaQuitadas.Cells.SpecialCells(Excel.XlCellType.xlCellTypeLastCell).Row + 1;
+                            //PegarFila(hojaQuitadas, lastRowQuitadas, fila);
 
                             // 💾 Insertar en base con la lógica de días y fechas
                             InsertarEnBase(conn, fila, hojaPrincipal, hojaQuitadas, i);
 
-                            // ❌ Eliminar de la hoja principal
-                            hojaPrincipal.Rows[i].Delete();
+                            // ❌ ELIMINADO: esta línea borraba filas de más
+                            //hojaPrincipal.Rows[i].Delete();
                         }
                     }
 
@@ -119,7 +119,6 @@ namespace Automatizacion_excel.Paso2
                 return Convert.ToInt32(cmd.ExecuteScalar()) > 0;
             }
         }
-
         // ---------------------------------------------------------------------
         // 🔹 Inserta una operación válida en ExcepcionAnticipo o marca duplicado
         // ---------------------------------------------------------------------
@@ -182,7 +181,7 @@ namespace Automatizacion_excel.Paso2
             }
 
             int dias = (cuotas >= 2) ? 9 :
-                       (cuotas == 1 && totalDescuento > 0.04m) ? 17 : 7;
+                       (cuotas == 1 && totalDescuento > 0.045m) ? 17 : 7;
 
             DateTime fechaAAgregar = SumarDiasHabiles(fechaOperacion, dias);
 
@@ -220,8 +219,6 @@ namespace Automatizacion_excel.Paso2
                 cmd.ExecuteNonQuery();
             }
         }
-
-
         // ---------------------------------------------------------------------
         // 🔹 Agrega operaciones pendientes desde la base al Excel
         // ---------------------------------------------------------------------
@@ -229,9 +226,7 @@ namespace Automatizacion_excel.Paso2
         {
             object valorC2 = (hoja.Cells[2, 3] as Excel.Range)?.Value2;
             DateTime? fechaPagoModelo = ParsearFecha(valorC2);
-            string fechaPagoTexto = fechaPagoModelo?.ToString("dd/MM/yyyy") ?? "";
 
-            // 🔹 Traer solo registros NO PAGADOS con fechaAAgregar hasta HOY
             const string sql = @"
 SELECT ID, FechaOperacion, FechaPresentacion, FechaPago, NroCupon, NroComercio, NroTarjeta,
        Moneda, TotalBruto, TotalDescuento, TotalNeto, EntidadPagadora, CuentaBancaria,
@@ -243,79 +238,50 @@ WHERE FechaAAgregar <= CAST(GETDATE() AS date)
   AND (EstadoNuevo IS NULL OR EstadoNuevo = 'NO PAGADO')
 ORDER BY FechaOperacion, NroCupon, NroComercio, NroTarjeta, ID;";
 
-            // 📥 Traer todos los registros a memoria
             DataTable dt = new DataTable();
             using (var adapter = new SqlDataAdapter(sql, conn))
             {
                 adapter.Fill(dt);
             }
 
-            // 🔹 Detectar duplicados en memoria (solo primer registro queda NO PAGADO)
-            var grupos = dt.AsEnumerable()
-                .GroupBy(r => new
-                {
-                    FechaOperacion = r.Field<DateTime>("FechaOperacion"),
-                    NroCupon = r["NroCupon"]?.ToString()?.Trim() ?? "",
-                    NroComercio = r["NroComercio"]?.ToString()?.Trim() ?? "",
-                    NroTarjeta = r["NroTarjeta"]?.ToString()?.Trim() ?? ""
-                });
-
-            foreach (var grupo in grupos)
-            {
-                bool primero = true;
-                foreach (var fila in grupo)
-                {
-                    string estado = primero ? "NO PAGADO" : "DUPLICADO";
-                    fila["EstadoNuevo"] = estado;
-                    primero = false;
-                }
-            }
-
-            // 🔹 Actualizar estados en base (sin tocar pagos futuros)
-            foreach (DataRow row in dt.Rows)
-            {
-                string upd = @"
-    UPDATE [dbo].[ExcepcionAnticipo]
-    SET EstadoNuevo = @EstadoNuevo,
-        FechaPagado = CASE WHEN @EstadoNuevo = 'DUPLICADO' THEN GETDATE() ELSE NULL END
-    WHERE ID = @ID;";
-
-                using (var cmd = new SqlCommand(upd, conn))
-                {
-                    cmd.Parameters.AddWithValue("@EstadoNuevo", row["EstadoNuevo"] ?? (object)DBNull.Value);
-                    cmd.Parameters.AddWithValue("@ID", row["ID"]);
-                    cmd.ExecuteNonQuery();
-                }
-            }
-
-            // 🔹 Filtrar solo las NO PAGADAS hasta hoy
-            var registrosParaPegar = dt.AsEnumerable()
+            var regs = dt.AsEnumerable()
                 .Where(r =>
                     (r["EstadoNuevo"]?.ToString() ?? "") == "NO PAGADO" &&
                     Convert.ToDateTime(r["FechaAAgregar"]) <= DateTime.Today)
                 .OrderBy(r => Convert.ToInt32(r["ID"]))
                 .ToList();
 
-            if (!registrosParaPegar.Any()) return;
+            if (!regs.Any()) return;
 
             int nextRow = hoja.UsedRange.Rows.Count + 1;
 
-            foreach (var row in registrosParaPegar)
+            foreach (var row in regs)
             {
+                // 🔹 BUSCAR UNA FILA COMPLETAMENTE VACÍA
+                while (!FilaVacia(hoja, nextRow))
+                {
+                    nextRow++;
+                }
+
+                // 🔹 PEGAR SI O SI (nunca se saltea)
                 for (int col = 1; col <= 22; col++)
                 {
-                    if (col == 9) continue; // ❌ Saltar columna I (anticipo)
+                    if (col == 9) continue; // evitar columna I
 
                     object valor = row[col];
 
-                    if (col == 3) // Fecha de pago
+                    // FechaPago → se setea la de hoy al pegar
+                    if (col == 3)
                     {
-                        valor = DateTime.Now.ToString("dd/MM/yyyy");
+                        // usar SIEMPRE la fecha modelo de la fila 2 columna 3
+                        valor = fechaPagoModelo?.ToString("dd/MM/yyyy") ?? "";
+
                         hoja.Cells[nextRow, col].NumberFormat = "@";
                         hoja.Cells[nextRow, col].HorizontalAlignment = Excel.XlHAlign.xlHAlignCenter;
                         hoja.Cells[nextRow, col].Interior.Color =
                             System.Drawing.ColorTranslator.ToOle(System.Drawing.Color.LightCyan);
                     }
+
                     else if (col == 16)
                     {
                         valor = "PENDIENTE-EXCEP ANTICIPO";
@@ -323,31 +289,23 @@ ORDER BY FechaOperacion, NroCupon, NroComercio, NroTarjeta, ID;";
 
                     hoja.Cells[nextRow, col].Value2 = valor;
                 }
+
                 nextRow++;
             }
 
-            // 🔹 Actualizar solo las filas agregadas a PAGADO
-            string ids = string.Join(",", registrosParaPegar.Select(r => r["ID"].ToString()));
-
+            // 🔹 MARCAR COMO PAGADO EN BASE
+            string ids = string.Join(",", regs.Select(r => r["ID"].ToString()));
             string updFinal = $@"
-    UPDATE [dbo].[ExcepcionAnticipo]
-    SET EstadoNuevo = 'PAGADO', 
-        FechaPagado = GETDATE(),
-        FechaPago = ISNULL(FechaPago, GETDATE())
-    WHERE ID IN ({ids})
-      AND FechaAAgregar <= CAST(GETDATE() AS date);";
+UPDATE [dbo].[ExcepcionAnticipo]
+SET EstadoNuevo = 'PAGADO', 
+    FechaPagado = GETDATE(),
+    FechaPago = ISNULL(FechaPago, GETDATE())
+WHERE ID IN ({ids})
+  AND FechaAAgregar <= CAST(GETDATE() AS date);";
 
             using (var cmd = new SqlCommand(updFinal, conn))
-            {
                 cmd.ExecuteNonQuery();
-            }
         }
-
-
-
-
-
-
 
         // ---------------------------------------------------------------------
         // 🔹 Utilidades
@@ -371,7 +329,7 @@ ORDER BY FechaOperacion, NroCupon, NroComercio, NroTarjeta, ID;";
             for (int col = 0; col < filaOrigen.Length; col++)
                 hojaDestino.Cells[filaDestino, col + 1].Value2 = filaOrigen[col];
         }
-         
+
         private object[] LeerFila(Excel.Worksheet hoja, int fila)
         {
             var rango = hoja.Range[$"A{fila}:V{fila}"].Value2 as object[,];
@@ -396,7 +354,16 @@ ORDER BY FechaOperacion, NroCupon, NroComercio, NroTarjeta, ID;";
             }
             catch { return null; }
         }
-
+        private bool FilaVacia(Excel.Worksheet hoja, int fila)
+        {
+            for (int col = 1; col <= 22; col++)
+            {
+                object v = (hoja.Cells[fila, col] as Excel.Range)?.Value2;
+                if (v != null && v.ToString().Trim() != "")
+                    return false; // hay datos → NO está vacía
+            }
+            return true; // TODA vacía → OK
+        }
         private object LimpiarDecimal(object valor)
         {
             if (valor == null || valor == DBNull.Value) return DBNull.Value;
