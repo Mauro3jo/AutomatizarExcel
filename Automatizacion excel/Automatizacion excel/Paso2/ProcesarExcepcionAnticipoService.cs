@@ -274,12 +274,15 @@ ORDER BY FechaOperacion, NroCupon, NroComercio, NroTarjeta, ID;";
                     if (col == 3)
                     {
                         // usar SIEMPRE la fecha modelo de la fila 2 columna 3
-                        valor = fechaPagoModelo?.ToString("dd/MM/yyyy") ?? "";
-
-                        hoja.Cells[nextRow, col].NumberFormat = "@";
-                        hoja.Cells[nextRow, col].HorizontalAlignment = Excel.XlHAlign.xlHAlignCenter;
-                        hoja.Cells[nextRow, col].Interior.Color =
-                            System.Drawing.ColorTranslator.ToOle(System.Drawing.Color.LightCyan);
+                        if (fechaPagoModelo.HasValue)
+                        {
+                            valor = fechaPagoModelo.Value;
+                            hoja.Cells[nextRow, col].NumberFormat = "dd/mm/yyyy";
+                        }
+                        else
+                        {
+                            valor = "";
+                        }
                     }
 
                     else if (col == 16)
