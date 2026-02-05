@@ -95,64 +95,82 @@ namespace Automatizacion_excel.Paso4
 
                 for (int fila = 2; fila <= ultimaFila; fila++)
                 {
-                    // Leer BRUTO
-                    var celdaBruto = hoja.Cells[fila, COL_BRUTO] as Excel.Range;
+                    // ===== BRUTO =====
+                    string brutoTxt = (hoja.Cells[fila, COL_BRUTO] as Excel.Range)?.Value2?.ToString();
                     double bruto = 0;
-                    double.TryParse(
-                        celdaBruto?.Value2?.ToString()
+
+                    if (!string.IsNullOrWhiteSpace(brutoTxt))
+                    {
+                        brutoTxt = brutoTxt
                             .Replace("$", "")
+                            .Replace(" ", "")
                             .Replace("(", "-")
                             .Replace(")", "")
+                            .Replace(".", "")
                             .Replace(",", ".")
-                            .Trim(),
-                        System.Globalization.NumberStyles.Any,
-                        System.Globalization.CultureInfo.InvariantCulture,
-                        out bruto);
+                            .Trim();
 
-                    if (bruto <= 0)
-                    {
-                        // NO se valida ni Arancel ni IVA en esta fila
-                        continue;
+                        double.TryParse(
+                            brutoTxt,
+                            System.Globalization.NumberStyles.Any,
+                            System.Globalization.CultureInfo.InvariantCulture,
+                            out bruto
+                        );
                     }
 
-                    // Leer % Comisión con IVA
-                    var celdaComision = hoja.Cells[fila, COL_COMISION] as Excel.Range;
-                    string strComision = celdaComision?.Text?.Replace("%", "").Replace(",", ".").Trim();
+                    if (bruto <= 0)
+                        continue;
+
+                    // ===== % COMISIÓN =====
+                    string comisionTxt = (hoja.Cells[fila, COL_COMISION] as Excel.Range)?.Text
+                        ?.Replace("%", "")
+                        ?.Replace(",", ".")
+                        ?.Trim();
+
                     double porcentajeComision = 0;
-                    double.TryParse(strComision, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out porcentajeComision);
-
-                    // Calcular arancel esperado
-                    double arancelEsperado = Math.Round(bruto * (porcentajeComision / 100), 2);
-
-                    // Arancel de la hoja
-                    var celdaArancel = hoja.Cells[fila, COL_ARANCEL] as Excel.Range;
-                    double arancelHoja = 0;
                     double.TryParse(
-                        celdaArancel?.Value2?.ToString()
-                            ?.Replace("$", "")
-                            ?.Replace(",", ".")
-                            ?.Trim(),
+                        comisionTxt,
                         System.Globalization.NumberStyles.Any,
                         System.Globalization.CultureInfo.InvariantCulture,
-                        out arancelHoja);
+                        out porcentajeComision
+                    );
+
+                    double arancelEsperado = Math.Round(bruto * (porcentajeComision / 100), 2);
+
+                    // ===== ARANCEL HOJA =====
+                    string arancelTxt = (hoja.Cells[fila, COL_ARANCEL] as Excel.Range)?.Value2?.ToString()
+                        ?.Replace("$", "")
+                        ?.Replace(".", "")
+                        ?.Replace(",", ".")
+                        ?.Trim();
+
+                    double arancelHoja = 0;
+                    double.TryParse(
+                        arancelTxt,
+                        System.Globalization.NumberStyles.Any,
+                        System.Globalization.CultureInfo.InvariantCulture,
+                        out arancelHoja
+                    );
 
                     if (Math.Abs(arancelHoja - arancelEsperado) > 0.01)
                         filasArancelMal.Add(fila);
 
-                    // Calcular IVA esperado
+                    // ===== IVA =====
                     double ivaEsperado = Math.Round(arancelEsperado * 0.21, 2);
 
-                    // IVA de la hoja
-                    var celdaIva = hoja.Cells[fila, COL_IVA] as Excel.Range;
+                    string ivaTxt = (hoja.Cells[fila, COL_IVA] as Excel.Range)?.Value2?.ToString()
+                        ?.Replace("$", "")
+                        ?.Replace(".", "")
+                        ?.Replace(",", ".")
+                        ?.Trim();
+
                     double ivaHoja = 0;
                     double.TryParse(
-                        celdaIva?.Value2?.ToString()
-                            ?.Replace("$", "")
-                            ?.Replace(",", ".")
-                            ?.Trim(),
+                        ivaTxt,
                         System.Globalization.NumberStyles.Any,
                         System.Globalization.CultureInfo.InvariantCulture,
-                        out ivaHoja);
+                        out ivaHoja
+                    );
 
                     if (Math.Abs(ivaHoja - ivaEsperado) > 0.01)
                         filasIvaMal.Add(fila);
@@ -179,6 +197,7 @@ namespace Automatizacion_excel.Paso4
                 if (excelApp != null) Marshal.ReleaseComObject(excelApp);
             }
         }
+
         public string ValidarFUR(Action<string, int> reportar)
         {
             Excel.Application excelApp = null;
@@ -357,9 +376,31 @@ namespace Automatizacion_excel.Paso4
 
                 for (int fila = 2; fila <= ultimaFila; fila++)
                 {
-                    var celda = hoja.Cells[fila, 8] as Excel.Range; // Columna H
-                    if (double.TryParse(celda?.Value2?.ToString(), out double valor))
-                        suma += valor;
+                    var celda = hoja.Cells[fila, 8] as Excel.Range; // Columna H (BRUTO)
+
+                    // ✅ leer y parsear sin ambigüedad + soporta $ ( ) , .
+                    string txt = celda?.Value2?.ToString();
+                    if (!string.IsNullOrWhiteSpace(txt))
+                    {
+                        txt = txt
+                            .Replace("$", "")
+                            .Replace(" ", "")
+                            .Replace("(", "-")
+                            .Replace(")", "")
+                            .Replace(".", "")   // miles
+                            .Replace(",", ".")  // decimal
+                            .Trim();
+
+                        if (double.TryParse(
+                                txt,
+                                System.Globalization.NumberStyles.Any,
+                                System.Globalization.CultureInfo.InvariantCulture,
+                                out double valor
+                            ))
+                        {
+                            suma += valor;
+                        }
+                    }
 
                     int progreso = 40 + (int)((fila - 1f) / (ultimaFila - 1f) * 50); // De 40 a 90
                     reportar($"➕ Sumando BRUTO en fila {fila}...", progreso);
@@ -375,6 +416,7 @@ namespace Automatizacion_excel.Paso4
                 if (excelApp != null) Marshal.ReleaseComObject(excelApp);
             }
         }
+
 
         public class MiniFurRow
         {
@@ -541,6 +583,7 @@ namespace Automatizacion_excel.Paso4
         {
             Excel.Application excelApp = null;
             Excel.Workbook workbook = null;
+
             int COL_BRUTO = 8;    // H
             int COL_COSTO = 31;   // AE
 
@@ -562,49 +605,65 @@ namespace Automatizacion_excel.Paso4
 
                 for (int fila = 2; fila <= ultimaFila; fila++)
                 {
-                    // Leer Bruto
-                    var celdaBruto = hoja.Cells[fila, COL_BRUTO] as Excel.Range;
+                    // ===== BRUTO =====
+                    string brutoTxt = (hoja.Cells[fila, COL_BRUTO] as Excel.Range)?.Value2?.ToString();
                     double bruto = 0;
-                    double.TryParse(
-                        celdaBruto?.Value2?.ToString()
+
+                    if (!string.IsNullOrWhiteSpace(brutoTxt))
+                    {
+                        brutoTxt = brutoTxt
                             .Replace("$", "")
+                            .Replace(" ", "")
                             .Replace("(", "-")
                             .Replace(")", "")
+                            .Replace(".", "")
                             .Replace(",", ".")
-                            .Trim(),
-                        System.Globalization.NumberStyles.Any,
-                        System.Globalization.CultureInfo.InvariantCulture,
-                        out bruto);
+                            .Trim();
 
-                    if (bruto <= 0) continue; // Si no hay bruto, ignorar la fila
+                        double.TryParse(
+                            brutoTxt,
+                            System.Globalization.NumberStyles.Any,
+                            System.Globalization.CultureInfo.InvariantCulture,
+                            out bruto
+                        );
+                    }
 
-                    // Calcular costo esperado (1.2% del bruto)
+                    if (bruto <= 0)
+                        continue;
+
+                    // ===== COSTO TRANSACCIONAL (1.2%) =====
                     double costoEsperado = Math.Round(bruto * 0.012, 2);
 
-                    // Leer costo transaccional (col AE)
-                    var celdaCosto = hoja.Cells[fila, COL_COSTO] as Excel.Range;
+                    string costoTxt = (hoja.Cells[fila, COL_COSTO] as Excel.Range)?.Value2?.ToString();
                     double costoHoja = 0;
-                    double.TryParse(
-                        celdaCosto?.Value2?.ToString()
+
+                    if (!string.IsNullOrWhiteSpace(costoTxt))
+                    {
+                        costoTxt = costoTxt
                             .Replace("$", "")
+                            .Replace(" ", "")
+                            .Replace(".", "")
                             .Replace(",", ".")
-                            .Trim(),
-                        System.Globalization.NumberStyles.Any,
-                        System.Globalization.CultureInfo.InvariantCulture,
-                        out costoHoja);
+                            .Trim();
+
+                        double.TryParse(
+                            costoTxt,
+                            System.Globalization.NumberStyles.Any,
+                            System.Globalization.CultureInfo.InvariantCulture,
+                            out costoHoja
+                        );
+                    }
 
                     if (Math.Abs(costoHoja - costoEsperado) > 0.01)
                         filasMal.Add(fila);
 
-                    int progreso = 90 + (int)((fila - 1f) / (ultimaFila - 1f) * 10); // De 90 a 100
+                    int progreso = 90 + (int)((fila - 1f) / (ultimaFila - 1f) * 10);
                     reportar($"💸 Validando costo transaccional fila {fila}...", progreso);
                 }
 
-                string resultado = filasMal.Count == 0
+                return filasMal.Count == 0
                     ? "✅ Todos los costos transaccionales (AE) están correctos."
                     : $"❌ Error en costo transaccional en filas: {string.Join(", ", filasMal)}";
-
-                return resultado;
             }
             finally
             {
@@ -614,6 +673,7 @@ namespace Automatizacion_excel.Paso4
                 if (excelApp != null) Marshal.ReleaseComObject(excelApp);
             }
         }
+
 
         public string ValidarIIBB(Action<string, int> reportar, Dictionary<string, double> alicuotas)
         {

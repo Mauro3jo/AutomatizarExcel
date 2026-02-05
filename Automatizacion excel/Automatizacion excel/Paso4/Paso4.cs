@@ -193,8 +193,16 @@ namespace Automatizacion_excel.Paso4
                     resultadoIIBB = "❌ Error IIBB: " + ex.Message;
                 }
 
-                // Mostrar resultados
-                lblResultado.ForeColor = filasInvalidas.Count == 0 ? Color.Green : Color.Red;
+                // 🔴 DETECTAR ERROR GLOBAL
+                bool hayErrores =
+                    resultadoFecha.Contains("❌") ||
+                    resultadoBruto.Contains("❌") ||
+                    resultadoArancel.Contains("❌") ||
+                    resultadoIva.Contains("❌") ||
+                    resultadoCosto.Contains("❌") ||
+                    resultadoIIBB.Contains("❌");
+
+                lblResultado.ForeColor = hayErrores ? Color.Red : Color.Green;
 
                 lblResultado.Text =
                     resultadoFecha + Environment.NewLine +
