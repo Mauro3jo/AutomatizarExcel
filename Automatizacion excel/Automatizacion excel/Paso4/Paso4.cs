@@ -143,29 +143,51 @@ namespace Automatizacion_excel.Paso4
             string resultadoIva;
             string resultadoCosto;
             string resultadoIIBB;
+            string resultadoTasas;
 
             List<int> filasInvalidas = new List<int>();
 
             try
             {
+                // PASO 1 - Fecha
                 resultadoFecha = controlador.ControlarFechaUnica(out filasInvalidas, ReportarProgreso);
+
+                // PASO 2 - Bruto
                 resultadoBruto = controlador.SumarColumnaBruto(ReportarProgreso);
 
+                // PASO 3 - Arancel + IVA
                 var (rArancel, rIva) = controlador.ValidarArancelEIVA(ReportarProgreso);
                 resultadoArancel = rArancel;
                 resultadoIva = rIva;
 
+                // PASO 4 - Costo transaccional
                 resultadoCosto = controlador.ControlarCostoTransaccional(ReportarProgreso);
 
+                // PASO 5 - IIBB
                 var alicuotas = IIBBHelper.ObtenerAlicuotasDesdeBD();
                 resultadoIIBB = controlador.ValidarIIBB(ReportarProgreso, alicuotas);
 
+                // 🔥 PASO 6 - CONTROL DE TASAS (NUEVO)
+                var tasas = ControlTasasReporteDiario.ObtenerTasas();
+                var filasConErrorTasa = ControlTasasReporteDiario.VerificarTasas(
+                    rutaDiario,
+                    tasas,
+                    ReportarProgreso
+                );
+
+                if (filasConErrorTasa.Count == 0)
+                    resultadoTasas = "✅ Tasas financieras: OK";
+                else
+                    resultadoTasas = $"❌ Tasas financieras superadas en fila(s): {string.Join(", ", filasConErrorTasa)}";
+
+                // Mostrar resultados
                 AgregarLinea(resultadoFecha);
                 AgregarLinea(resultadoBruto);
                 AgregarLinea(resultadoArancel);
                 AgregarLinea(resultadoIva);
                 AgregarLinea(resultadoCosto);
                 AgregarLinea(resultadoIIBB);
+                AgregarLinea(resultadoTasas);
 
                 progressBar.Value = 100;
             }
@@ -179,6 +201,7 @@ namespace Automatizacion_excel.Paso4
                 progressBar.Value = 0;
             }
         }
+
 
         private void BtnValidarFUR_Click(object sender, EventArgs e)
         {
