@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Windows.Forms;
 using Automatizacion_excel.Paso4;
@@ -17,8 +18,10 @@ namespace Automatizacion_excel.Paso4
         private Button btnCargarDiario;
         private Button btnControlarDiario;
         private Button btnValidarFUR;
-        private Button btnDescargarResumen; // <--- Nuevo botón
-        private Label lblResultado;
+        private Button btnDescargarResumen;
+
+        // 🔥 CAMBIO CLAVE
+        private RichTextBox rtbResultado;
 
         public Paso4(Panel panelBotones, ProgressBar progressBar, Label lblRutaArchivo, Form form)
         {
@@ -82,7 +85,6 @@ namespace Automatizacion_excel.Paso4
             btnValidarFUR.Click += BtnValidarFUR_Click;
             panelBotones.Controls.Add(btnValidarFUR);
 
-            // ------ Nuevo Botón: Exportar Resumen -------
             btnDescargarResumen = new Button
             {
                 Text = "⬇️ Descargar Resumen",
@@ -93,17 +95,18 @@ namespace Automatizacion_excel.Paso4
             };
             btnDescargarResumen.Click += BtnDescargarResumen_Click;
             panelBotones.Controls.Add(btnDescargarResumen);
-            // --------------------------------------------
 
-            lblResultado = new Label
+            // ✅ RESULTADOS CON COLOR POR LÍNEA
+            rtbResultado = new RichTextBox
             {
-                Text = "",
-                AutoSize = true,
-                MaximumSize = new Size(700, 0),
                 Location = new Point(10, 130),
-                ForeColor = Color.DarkBlue
+                Size = new Size(700, 240),
+                ReadOnly = true,
+                BorderStyle = BorderStyle.None,
+                Font = new Font("Segoe UI", 9),
+                BackColor = panelBotones.BackColor
             };
-            panelBotones.Controls.Add(lblResultado);
+            panelBotones.Controls.Add(rtbResultado);
 
             progressBar.Visible = false;
             progressBar.Value = 0;
@@ -111,13 +114,17 @@ namespace Automatizacion_excel.Paso4
 
         private void BtnCargarDiario_Click(object sender, EventArgs e)
         {
-            OpenFileDialog ofd = new OpenFileDialog { Filter = "Archivos Excel|*.xls;*.xlsx;*.xlsm" };
+            OpenFileDialog ofd = new OpenFileDialog
+            {
+                Filter = "Archivos Excel|*.xls;*.xlsx;*.xlsm"
+            };
+
             if (ofd.ShowDialog() == DialogResult.OK)
             {
                 rutaDiario = ofd.FileName;
                 lblDiario.Text = $"📁 Diario cargado:\n{rutaDiario}";
                 btnControlarDiario.Enabled = true;
-                btnValidarFUR.Enabled = true; // Habilita el botón FUR cuando se carga el diario
+                btnValidarFUR.Enabled = true;
             }
         }
 
@@ -126,98 +133,45 @@ namespace Automatizacion_excel.Paso4
             progressBar.Visible = true;
             progressBar.Value = 0;
 
+            rtbResultado.Clear();
+
             var controlador = new ControladorDiario(rutaDiario);
 
-            string resultadoFecha = "⛔ Error en fecha.";
-            string resultadoBruto = "⛔ Error al sumar BRUTO.";
-            string resultadoArancel = "⛔ Error en Arancel.";
-            string resultadoIva = "⛔ Error en IVA.";
-            string resultadoCosto = "⛔ Error en Costo Transaccional.";
-            string resultadoIIBB = "⛔ Error en IIBB.";
+            string resultadoFecha;
+            string resultadoBruto;
+            string resultadoArancel;
+            string resultadoIva;
+            string resultadoCosto;
+            string resultadoIIBB;
 
             List<int> filasInvalidas = new List<int>();
 
             try
             {
-                // PASO 1
-                try
-                {
-                    resultadoFecha = controlador.ControlarFechaUnica(out filasInvalidas, ReportarProgreso);
-                }
-                catch (Exception ex)
-                {
-                    resultadoFecha = "❌ Error en Fecha: " + ex.Message;
-                }
+                resultadoFecha = controlador.ControlarFechaUnica(out filasInvalidas, ReportarProgreso);
+                resultadoBruto = controlador.SumarColumnaBruto(ReportarProgreso);
 
-                // PASO 2
-                try
-                {
-                    resultadoBruto = controlador.SumarColumnaBruto(ReportarProgreso);
-                }
-                catch (Exception ex)
-                {
-                    resultadoBruto = "❌ Error sumando BRUTO: " + ex.Message;
-                }
+                var (rArancel, rIva) = controlador.ValidarArancelEIVA(ReportarProgreso);
+                resultadoArancel = rArancel;
+                resultadoIva = rIva;
 
-                // PASO 3
-                try
-                {
-                    var (rArancel, rIva) = controlador.ValidarArancelEIVA(ReportarProgreso);
-                    resultadoArancel = rArancel;
-                    resultadoIva = rIva;
-                }
-                catch (Exception ex)
-                {
-                    resultadoArancel = "❌ Error Arancel: " + ex.Message;
-                    resultadoIva = "❌ Error IVA: " + ex.Message;
-                }
+                resultadoCosto = controlador.ControlarCostoTransaccional(ReportarProgreso);
 
-                // PASO 4
-                try
-                {
-                    resultadoCosto = controlador.ControlarCostoTransaccional(ReportarProgreso);
-                }
-                catch (Exception ex)
-                {
-                    resultadoCosto = "❌ Error Costo Transaccional: " + ex.Message;
-                }
+                var alicuotas = IIBBHelper.ObtenerAlicuotasDesdeBD();
+                resultadoIIBB = controlador.ValidarIIBB(ReportarProgreso, alicuotas);
 
-                // PASO 5
-                try
-                {
-                    var alicuotas = IIBBHelper.ObtenerAlicuotasDesdeBD();
-                    resultadoIIBB = controlador.ValidarIIBB(ReportarProgreso, alicuotas);
-                }
-                catch (Exception ex)
-                {
-                    resultadoIIBB = "❌ Error IIBB: " + ex.Message;
-                }
-
-                // 🔴 DETECTAR ERROR GLOBAL
-                bool hayErrores =
-                    resultadoFecha.Contains("❌") ||
-                    resultadoBruto.Contains("❌") ||
-                    resultadoArancel.Contains("❌") ||
-                    resultadoIva.Contains("❌") ||
-                    resultadoCosto.Contains("❌") ||
-                    resultadoIIBB.Contains("❌");
-
-                lblResultado.ForeColor = hayErrores ? Color.Red : Color.Green;
-
-                lblResultado.Text =
-                    resultadoFecha + Environment.NewLine +
-                    resultadoBruto + Environment.NewLine +
-                    resultadoArancel + Environment.NewLine +
-                    resultadoIva + Environment.NewLine +
-                    resultadoCosto + Environment.NewLine +
-                    resultadoIIBB;
+                AgregarLinea(resultadoFecha);
+                AgregarLinea(resultadoBruto);
+                AgregarLinea(resultadoArancel);
+                AgregarLinea(resultadoIva);
+                AgregarLinea(resultadoCosto);
+                AgregarLinea(resultadoIIBB);
 
                 progressBar.Value = 100;
             }
             catch (Exception ex)
             {
-                lblResultado.ForeColor = Color.Red;
-                lblResultado.Text = "❌ Error general: " + ex.Message;
+                AgregarLinea("❌ Error general: " + ex.Message);
             }
             finally
             {
@@ -225,7 +179,6 @@ namespace Automatizacion_excel.Paso4
                 progressBar.Value = 0;
             }
         }
-
 
         private void BtnValidarFUR_Click(object sender, EventArgs e)
         {
@@ -234,18 +187,18 @@ namespace Automatizacion_excel.Paso4
                 progressBar.Visible = true;
                 progressBar.Value = 0;
 
+                rtbResultado.Clear();
+
                 var controlador = new ControladorDiario(rutaDiario);
                 string resultado = controlador.ValidarFUR(ReportarProgreso);
 
-                lblResultado.ForeColor = resultado.StartsWith("✅") ? Color.Green : Color.Red;
-                lblResultado.Text = resultado;
+                AgregarLinea(resultado);
 
                 progressBar.Value = 100;
             }
             catch (Exception ex)
             {
-                lblResultado.ForeColor = Color.Red;
-                lblResultado.Text = "❌ Error: " + ex.Message;
+                AgregarLinea("❌ Error: " + ex.Message);
             }
             finally
             {
@@ -254,10 +207,9 @@ namespace Automatizacion_excel.Paso4
             }
         }
 
-        // -------- NUEVO: Descargar Resumen --------
         private void BtnDescargarResumen_Click(object sender, EventArgs e)
         {
-            if (string.IsNullOrEmpty(rutaDiario) || !System.IO.File.Exists(rutaDiario))
+            if (string.IsNullOrEmpty(rutaDiario))
             {
                 MessageBox.Show("Primero cargá un archivo diario.");
                 return;
@@ -266,7 +218,6 @@ namespace Automatizacion_excel.Paso4
             SaveFileDialog sfd = new SaveFileDialog
             {
                 Filter = "Archivos Excel|*.xlsx;*.xlsm",
-                Title = "Guardar Resumen",
                 FileName = "ResumenComisiones.xlsx"
             };
 
@@ -284,7 +235,22 @@ namespace Automatizacion_excel.Paso4
                 }
             }
         }
-        // ------------------------------------------
+
+        private void AgregarLinea(string texto)
+        {
+            rtbResultado.SelectionStart = rtbResultado.TextLength;
+            rtbResultado.SelectionLength = 0;
+
+            if (texto.StartsWith("✅"))
+                rtbResultado.SelectionColor = Color.Green;
+            else if (texto.StartsWith("❌"))
+                rtbResultado.SelectionColor = Color.Red;
+            else
+                rtbResultado.SelectionColor = Color.Black;
+
+            rtbResultado.AppendText(texto + Environment.NewLine);
+            rtbResultado.SelectionColor = rtbResultado.ForeColor;
+        }
 
         private void ReportarProgreso(string mensaje, int valor)
         {
